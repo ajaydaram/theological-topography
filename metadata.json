@@ -1,0 +1,6 @@
+{
+  "name": "Theological Data Explorer",
+  "description": "A cross-reference engine and chain of custody viewer for church creeds and confessions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

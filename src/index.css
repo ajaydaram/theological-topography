@@ -1,0 +1,122 @@
+@import "tailwindcss";
+
+:root {
+	--paper: #F9F7F2;
+	--oxblood: #A52A2A;
+	--ink: #000000;
+}
+
+body {
+	background: var(--paper);
+	color: var(--ink);
+}
+
+.theme-museum button {
+	background: transparent !important;
+	border: none !important;
+	box-shadow: none !important;
+	border-radius: 0;
+	text-decoration-line: underline;
+	text-decoration-color: var(--oxblood);
+	text-underline-offset: 4px;
+}
+
+.theme-museum button:hover {
+	color: var(--oxblood);
+}
+
+.theme-minimalist {
+	background: #f4f4f5;
+	color: #18181b;
+}
+
+.theme-minimalist button {
+	background: #ffffff !important;
+	border: 1px solid #d4d4d8 !important;
+	border-radius: 8px;
+	text-decoration: none;
+	padding: 0.35rem 0.55rem;
+	transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.theme-minimalist button:hover {
+	background: #f4f4f5 !important;
+	border-color: #a1a1aa !important;
+	color: #2563eb;
+}
+
+.theme-minimalist input {
+	background: #ffffff !important;
+	border-color: #d4d4d8 !important;
+	color: #18181b !important;
+}
+
+.theme-minimalist aside,
+.theme-minimalist main,
+.theme-minimalist header,
+.theme-minimalist section,
+.theme-minimalist .border-double {
+	background: #ffffff !important;
+	border-color: #e4e4e7 !important;
+	box-shadow: none !important;
+}
+
+.theme-minimalist .bg-\[\#A52A2A\] {
+	background: #2563eb !important;
+}
+
+.theme-minimalist .text-\[\#A52A2A\],
+.theme-minimalist .decoration-\[\#A52A2A\],
+.theme-minimalist .focus\:outline-\[\#A52A2A\]:focus,
+.theme-minimalist .focus-visible\:outline-\[\#A52A2A\]:focus-visible {
+	color: #2563eb !important;
+	text-decoration-color: #2563eb !important;
+	outline-color: #2563eb !important;
+}
+
+.theme-minimalist .text-\[\#000000\],
+.theme-minimalist .placeholder-\[\#000000\],
+.theme-minimalist .border-\[\#000000\],
+.theme-minimalist .border-dashed {
+	color: #18181b !important;
+	border-color: #d4d4d8 !important;
+}
+
+.theme-minimalist .border,
+.theme-minimalist .border-dashed,
+.theme-minimalist .border-double {
+	border-color: #e4e4e7 !important;
+	border-width: 1px !important;
+}
+
+.theme-minimalist .border-dashed,
+.theme-minimalist .border-double {
+	border-style: solid !important;
+}
+
+.theme-minimalist .space-y-2 > :not([hidden]) ~ :not([hidden]) {
+	margin-top: 0.7rem !important;
+}
+
+.theme-minimalist .space-y-3 > :not([hidden]) ~ :not([hidden]) {
+	margin-top: 0.95rem !important;
+}
+
+.theme-minimalist .space-y-4 > :not([hidden]) ~ :not([hidden]) {
+	margin-top: 1.2rem !important;
+}
+
+button:focus-visible,
+input:focus-visible {
+	outline: 2px solid var(--oxblood);
+	outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*, *::before, *::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+}
