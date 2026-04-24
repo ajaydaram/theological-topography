@@ -5,19 +5,12 @@ import { SEED_DATA } from './data/seed';
 import { CreedDocument } from './types';
 import { THEMES, ThemeMode } from './theme';
 import { readTelemetryCounts, recordTelemetryEvent, type TelemetryCounts } from './lib/telemetry';
-import { fetchVerseText, VERSE_TEXT_SOURCE_LABEL } from './lib/verseText';
+import { VERSE_TEXT_SOURCE_LABEL } from './lib/verseText';
+import { useVerseTextCache } from './hooks/useVerseTextCache';
+import { VerseTextTogglePanel } from './components/VerseTextTogglePanel';
 
 type LoadStatus = 'loading' | 'remote' | 'fallback';
 type CompareSide = 'left' | 'right';
-type VerseTextStatus = 'idle' | 'loading' | 'loaded' | 'error';
-
-interface VerseTextEntry {
-  status: VerseTextStatus;
-  text?: string;
-  translation?: string;
-  source?: string;
-  error?: string;
-}
 
 function formatGeneratedAt(value: string | null) {
   if (!value) return 'UNKNOWN';
@@ -48,14 +41,25 @@ export default function App() {
   const [dataSource, setDataSource] = useState<CreedDataSource | 'seed-fallback'>('seed-fallback');
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [verseIndexData, setVerseIndexData] = useState<VerseIndexData>({ verseIndex: [], verseMap: {} });
-  const [visibleVerseTexts, setVisibleVerseTexts] = useState<Record<string, boolean>>({});
-  const [verseTextCache, setVerseTextCache] = useState<Record<string, VerseTextEntry>>({});
   const [telemetryCounts, setTelemetryCounts] = useState<TelemetryCounts>(() => readTelemetryCounts());
   const deepSearchInputRef = useRef<HTMLInputElement | null>(null);
   const initialActiveIdRef = useRef(activeId);
   const initialReferenceIdRef = useRef(referenceId);
 
   const theme = THEMES[themeMode];
+  const {
+    verseTextCache,
+    visibleVerseTexts,
+    toggleVerseText,
+    showAllVerseTexts,
+    hideAllVerseTexts,
+    retryVerseText,
+  } = useVerseTextCache({
+    onReveal: () => {
+      recordTelemetryEvent('verse_text_revealed');
+      setTelemetryCounts(readTelemetryCounts());
+    },
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -386,60 +390,6 @@ export default function App() {
   const handleThemeToggle = () => {
     setHasSwitchedTheme(true);
     setThemeMode((current) => (current === 'museum' ? 'minimalist' : 'museum'));
-  };
-
-  const ensureVerseTextLoaded = (reference: string) => {
-    const key = reference.trim();
-    if (!key) return;
-
-    const cached = verseTextCache[key];
-    if (cached?.status === 'loading' || cached?.status === 'loaded') {
-      return;
-    }
-
-    setVerseTextCache((current) => ({
-      ...current,
-      [key]: { status: 'loading' },
-    }));
-
-    void (async () => {
-      try {
-        const verseText = await fetchVerseText(key);
-        setVerseTextCache((current) => ({
-          ...current,
-          [key]: {
-            status: 'loaded',
-            text: verseText.text,
-            translation: verseText.translation,
-            source: verseText.source,
-          },
-        }));
-      } catch (error) {
-        setVerseTextCache((current) => ({
-          ...current,
-          [key]: {
-            status: 'error',
-            error: error instanceof Error ? error.message : 'Unable to load verse text.',
-          },
-        }));
-      }
-    })();
-  };
-
-  const toggleVerseText = (reference: string) => {
-    const key = reference.trim();
-    if (!key) return;
-
-    const nextVisible = !visibleVerseTexts[key];
-    setVisibleVerseTexts((current) => ({
-      ...current,
-      [key]: nextVisible,
-    }));
-
-    if (nextVisible) {
-      ensureVerseTextLoaded(key);
-      logTelemetry('verse_text_revealed');
-    }
   };
 
   useEffect(() => {
@@ -893,6 +843,22 @@ export default function App() {
                         <BookOpen className="w-3 h-3" />
                         Scripture Roots
                       </h3>
+                      <div className="flex items-center gap-3 mb-3">
+                        <button
+                          type="button"
+                          onClick={() => showAllVerseTexts(activeDoc.proofs.map((proof) => proof.display))}
+                          className="text-[9px] font-mono uppercase tracking-widest text-[#000000] underline decoration-[#000000] underline-offset-4 hover:decoration-[#A52A2A]"
+                        >
+                          Show All Visible Roots
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => hideAllVerseTexts(activeDoc.proofs.map((proof) => proof.display))}
+                          className="text-[9px] font-mono uppercase tracking-widest text-[#000000] underline decoration-[#000000] underline-offset-4 hover:decoration-[#A52A2A]"
+                        >
+                          Hide All
+                        </button>
+                      </div>
                       <div className="text-[9px] font-mono uppercase tracking-widest text-[#000000] mb-3">
                         Verse text source: {VERSE_TEXT_SOURCE_LABEL}
                       </div>
@@ -922,35 +888,14 @@ export default function App() {
                                   </div>
                                 </button>
 
-                                <div className="mt-2 ml-2">
-                                  <button
-                                    type="button"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      toggleVerseText(proof.display);
-                                    }}
-                                    className="text-[9px] font-mono uppercase tracking-widest text-[#000000] underline decoration-[#000000] underline-offset-4 hover:decoration-[#A52A2A]"
-                                  >
-                                    {isVerseVisible ? 'Hide Verse Text' : 'Show Verse Text'}
-                                  </button>
-
-                                  {isVerseVisible && (
-                                    <div className="mt-2 border border-dashed border-[#000000] bg-[#F9F7F2] p-3">
-                                      <div className="text-[9px] font-mono uppercase tracking-widest text-[#A52A2A] mb-2">
-                                        {(verseTextEntry.translation ?? 'KJV')} via {verseTextEntry.source ?? 'bible-api.com'}
-                                      </div>
-                                      {verseTextEntry.status === 'loading' && (
-                                        <div className="text-xs font-serif italic text-[#000000]">Loading verse text...</div>
-                                      )}
-                                      {verseTextEntry.status === 'loaded' && (
-                                        <p className="text-sm font-serif leading-relaxed text-[#000000] whitespace-pre-line">{verseTextEntry.text}</p>
-                                      )}
-                                      {verseTextEntry.status === 'error' && (
-                                        <div className="text-xs font-serif text-[#A52A2A]">{verseTextEntry.error ?? 'Unable to load verse text.'}</div>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
+                                <VerseTextTogglePanel
+                                  reference={proof.display}
+                                  isVisible={isVerseVisible}
+                                  entry={verseTextEntry}
+                                  onToggle={toggleVerseText}
+                                  onRetry={retryVerseText}
+                                  idPrefix="active-verse"
+                                />
 
                                 {verseTooltipDocs.length > 0 && (
                                   <div className="absolute left-0 top-full z-20 mt-2 w-72 border border-[#000000] bg-[#F9F7F2] p-3 shadow-lg">
@@ -1115,6 +1060,22 @@ export default function App() {
                         <BookOpen className="w-3 h-3" />
                         Scripture Roots
                       </h3>
+                      <div className="flex items-center gap-3 mb-3">
+                        <button
+                          type="button"
+                          onClick={() => showAllVerseTexts(referenceDoc.proofs.slice(0, 6).map((proof) => proof.display))}
+                          className="text-[9px] font-mono uppercase tracking-widest text-[#000000] underline decoration-[#000000] underline-offset-4 hover:decoration-[#A52A2A]"
+                        >
+                          Show All Visible Roots
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => hideAllVerseTexts(referenceDoc.proofs.slice(0, 6).map((proof) => proof.display))}
+                          className="text-[9px] font-mono uppercase tracking-widest text-[#000000] underline decoration-[#000000] underline-offset-4 hover:decoration-[#A52A2A]"
+                        >
+                          Hide All
+                        </button>
+                      </div>
                       <div className="text-[9px] font-mono uppercase tracking-widest text-[#000000] mb-3">
                         Verse text source: {VERSE_TEXT_SOURCE_LABEL}
                       </div>
@@ -1129,35 +1090,15 @@ export default function App() {
                                 <div className="font-serif text-sm leading-snug text-[#000000]">{proof.display}</div>
                               </button>
 
-                              <div className="mt-2">
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    toggleVerseText(proof.display);
-                                  }}
-                                  className="text-[9px] font-mono uppercase tracking-widest text-[#000000] underline decoration-[#000000] underline-offset-4 hover:decoration-[#A52A2A]"
-                                >
-                                  {isVerseVisible ? 'Hide Verse Text' : 'Show Verse Text'}
-                                </button>
-
-                                {isVerseVisible && (
-                                  <div className="mt-2 border border-[#000000] bg-white/60 p-3">
-                                    <div className="text-[9px] font-mono uppercase tracking-widest text-[#A52A2A] mb-2">
-                                      {(verseTextEntry.translation ?? 'KJV')} via {verseTextEntry.source ?? 'bible-api.com'}
-                                    </div>
-                                    {verseTextEntry.status === 'loading' && (
-                                      <div className="text-xs font-serif italic text-[#000000]">Loading verse text...</div>
-                                    )}
-                                    {verseTextEntry.status === 'loaded' && (
-                                      <p className="text-sm font-serif leading-relaxed text-[#000000] whitespace-pre-line">{verseTextEntry.text}</p>
-                                    )}
-                                    {verseTextEntry.status === 'error' && (
-                                      <div className="text-xs font-serif text-[#A52A2A]">{verseTextEntry.error ?? 'Unable to load verse text.'}</div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
+                              <VerseTextTogglePanel
+                                reference={proof.display}
+                                isVisible={isVerseVisible}
+                                entry={verseTextEntry}
+                                onToggle={toggleVerseText}
+                                onRetry={retryVerseText}
+                                idPrefix="reference-verse"
+                                compact
+                              />
                             </div>
                           );
                         })}

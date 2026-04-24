@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "test:verse": "node scripts/verse-text-smoke.cjs",
     "data:fetch": "tsx scripts/fetch-creeds.ts",
     "data:normalize": "tsx scripts/normalize-creeds.ts",
     "data:pivot": "tsx scripts/build-verse-pivot.ts",
