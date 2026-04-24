@@ -4,7 +4,8 @@ export type TelemetryEventName =
   | 'deep_search_submitted'
   | 'reference_panel_opened'
   | 'verse_tooltip_opened'
-  | 'panel_swapped';
+  | 'panel_swapped'
+  | 'verse_text_revealed';
 
 export type TelemetryCounts = Record<TelemetryEventName, number>;
 
@@ -13,6 +14,7 @@ const DEFAULT_COUNTS: TelemetryCounts = {
   reference_panel_opened: 0,
   verse_tooltip_opened: 0,
   panel_swapped: 0,
+  verse_text_revealed: 0,
 };
 
 function getStorage() {
@@ -38,6 +40,7 @@ export function readTelemetryCounts(): TelemetryCounts {
       reference_panel_opened: parsed.reference_panel_opened ?? 0,
       verse_tooltip_opened: parsed.verse_tooltip_opened ?? 0,
       panel_swapped: parsed.panel_swapped ?? 0,
+      verse_text_revealed: parsed.verse_text_revealed ?? 0,
     };
   } catch {
     return { ...DEFAULT_COUNTS };

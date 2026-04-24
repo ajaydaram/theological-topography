@@ -5,9 +5,19 @@ import { SEED_DATA } from './data/seed';
 import { CreedDocument } from './types';
 import { THEMES, ThemeMode } from './theme';
 import { readTelemetryCounts, recordTelemetryEvent, type TelemetryCounts } from './lib/telemetry';
+import { fetchVerseText, VERSE_TEXT_SOURCE_LABEL } from './lib/verseText';
 
 type LoadStatus = 'loading' | 'remote' | 'fallback';
 type CompareSide = 'left' | 'right';
+type VerseTextStatus = 'idle' | 'loading' | 'loaded' | 'error';
+
+interface VerseTextEntry {
+  status: VerseTextStatus;
+  text?: string;
+  translation?: string;
+  source?: string;
+  error?: string;
+}
 
 function formatGeneratedAt(value: string | null) {
   if (!value) return 'UNKNOWN';
@@ -38,6 +48,8 @@ export default function App() {
   const [dataSource, setDataSource] = useState<CreedDataSource | 'seed-fallback'>('seed-fallback');
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [verseIndexData, setVerseIndexData] = useState<VerseIndexData>({ verseIndex: [], verseMap: {} });
+  const [visibleVerseTexts, setVisibleVerseTexts] = useState<Record<string, boolean>>({});
+  const [verseTextCache, setVerseTextCache] = useState<Record<string, VerseTextEntry>>({});
   const [telemetryCounts, setTelemetryCounts] = useState<TelemetryCounts>(() => readTelemetryCounts());
   const deepSearchInputRef = useRef<HTMLInputElement | null>(null);
   const initialActiveIdRef = useRef(activeId);
@@ -374,6 +386,60 @@ export default function App() {
   const handleThemeToggle = () => {
     setHasSwitchedTheme(true);
     setThemeMode((current) => (current === 'museum' ? 'minimalist' : 'museum'));
+  };
+
+  const ensureVerseTextLoaded = (reference: string) => {
+    const key = reference.trim();
+    if (!key) return;
+
+    const cached = verseTextCache[key];
+    if (cached?.status === 'loading' || cached?.status === 'loaded') {
+      return;
+    }
+
+    setVerseTextCache((current) => ({
+      ...current,
+      [key]: { status: 'loading' },
+    }));
+
+    void (async () => {
+      try {
+        const verseText = await fetchVerseText(key);
+        setVerseTextCache((current) => ({
+          ...current,
+          [key]: {
+            status: 'loaded',
+            text: verseText.text,
+            translation: verseText.translation,
+            source: verseText.source,
+          },
+        }));
+      } catch (error) {
+        setVerseTextCache((current) => ({
+          ...current,
+          [key]: {
+            status: 'error',
+            error: error instanceof Error ? error.message : 'Unable to load verse text.',
+          },
+        }));
+      }
+    })();
+  };
+
+  const toggleVerseText = (reference: string) => {
+    const key = reference.trim();
+    if (!key) return;
+
+    const nextVisible = !visibleVerseTexts[key];
+    setVisibleVerseTexts((current) => ({
+      ...current,
+      [key]: nextVisible,
+    }));
+
+    if (nextVisible) {
+      ensureVerseTextLoaded(key);
+      logTelemetry('verse_text_revealed');
+    }
   };
 
   useEffect(() => {
@@ -827,11 +893,16 @@ export default function App() {
                         <BookOpen className="w-3 h-3" />
                         Scripture Roots
                       </h3>
+                      <div className="text-[9px] font-mono uppercase tracking-widest text-[#000000] mb-3">
+                        Verse text source: {VERSE_TEXT_SOURCE_LABEL}
+                      </div>
                       <ul className="space-y-3">
                         {activeDoc.proofs.map((proof) => {
                           const sharedDocs = verseIndexData.verseMap[proof.display] ?? [];
                           const isSelected = selectedVerse === proof.display;
                           const verseTooltipDocs = hoveredVerse === proof.display ? hoveredVerseDocs : [];
+                          const isVerseVisible = Boolean(visibleVerseTexts[proof.display]);
+                          const verseTextEntry = verseTextCache[proof.display] ?? { status: 'idle' as const };
 
                           return (
                             <li key={proof.display} className="relative">
@@ -850,6 +921,36 @@ export default function App() {
                                     </div>
                                   </div>
                                 </button>
+
+                                <div className="mt-2 ml-2">
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      toggleVerseText(proof.display);
+                                    }}
+                                    className="text-[9px] font-mono uppercase tracking-widest text-[#000000] underline decoration-[#000000] underline-offset-4 hover:decoration-[#A52A2A]"
+                                  >
+                                    {isVerseVisible ? 'Hide Verse Text' : 'Show Verse Text'}
+                                  </button>
+
+                                  {isVerseVisible && (
+                                    <div className="mt-2 border border-dashed border-[#000000] bg-[#F9F7F2] p-3">
+                                      <div className="text-[9px] font-mono uppercase tracking-widest text-[#A52A2A] mb-2">
+                                        {(verseTextEntry.translation ?? 'KJV')} via {verseTextEntry.source ?? 'bible-api.com'}
+                                      </div>
+                                      {verseTextEntry.status === 'loading' && (
+                                        <div className="text-xs font-serif italic text-[#000000]">Loading verse text...</div>
+                                      )}
+                                      {verseTextEntry.status === 'loaded' && (
+                                        <p className="text-sm font-serif leading-relaxed text-[#000000] whitespace-pre-line">{verseTextEntry.text}</p>
+                                      )}
+                                      {verseTextEntry.status === 'error' && (
+                                        <div className="text-xs font-serif text-[#A52A2A]">{verseTextEntry.error ?? 'Unable to load verse text.'}</div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
 
                                 {verseTooltipDocs.length > 0 && (
                                   <div className="absolute left-0 top-full z-20 mt-2 w-72 border border-[#000000] bg-[#F9F7F2] p-3 shadow-lg">
@@ -1014,12 +1115,52 @@ export default function App() {
                         <BookOpen className="w-3 h-3" />
                         Scripture Roots
                       </h3>
+                      <div className="text-[9px] font-mono uppercase tracking-widest text-[#000000] mb-3">
+                        Verse text source: {VERSE_TEXT_SOURCE_LABEL}
+                      </div>
                       <div className="space-y-2">
-                        {referenceDoc.proofs.slice(0, 6).map((proof) => (
-                          <button key={proof.display} onClick={() => setSelectedVerse(proof.display)} className="w-full text-left p-3 border border-dashed border-[#000000] hover:border-[#A52A2A] transition-colors bg-[#F9F7F2]">
-                            <div className="font-serif text-sm leading-snug text-[#000000]">{proof.display}</div>
-                          </button>
-                        ))}
+                        {referenceDoc.proofs.slice(0, 6).map((proof) => {
+                          const isVerseVisible = Boolean(visibleVerseTexts[proof.display]);
+                          const verseTextEntry = verseTextCache[proof.display] ?? { status: 'idle' as const };
+
+                          return (
+                            <div key={proof.display} className="border border-dashed border-[#000000] bg-[#F9F7F2] p-3">
+                              <button onClick={() => setSelectedVerse(proof.display)} className="w-full text-left hover:text-[#A52A2A] transition-colors">
+                                <div className="font-serif text-sm leading-snug text-[#000000]">{proof.display}</div>
+                              </button>
+
+                              <div className="mt-2">
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    toggleVerseText(proof.display);
+                                  }}
+                                  className="text-[9px] font-mono uppercase tracking-widest text-[#000000] underline decoration-[#000000] underline-offset-4 hover:decoration-[#A52A2A]"
+                                >
+                                  {isVerseVisible ? 'Hide Verse Text' : 'Show Verse Text'}
+                                </button>
+
+                                {isVerseVisible && (
+                                  <div className="mt-2 border border-[#000000] bg-white/60 p-3">
+                                    <div className="text-[9px] font-mono uppercase tracking-widest text-[#A52A2A] mb-2">
+                                      {(verseTextEntry.translation ?? 'KJV')} via {verseTextEntry.source ?? 'bible-api.com'}
+                                    </div>
+                                    {verseTextEntry.status === 'loading' && (
+                                      <div className="text-xs font-serif italic text-[#000000]">Loading verse text...</div>
+                                    )}
+                                    {verseTextEntry.status === 'loaded' && (
+                                      <p className="text-sm font-serif leading-relaxed text-[#000000] whitespace-pre-line">{verseTextEntry.text}</p>
+                                    )}
+                                    {verseTextEntry.status === 'error' && (
+                                      <div className="text-xs font-serif text-[#A52A2A]">{verseTextEntry.error ?? 'Unable to load verse text.'}</div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>
