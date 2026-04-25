@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, ChevronRight, Clock, FileText, Hash, Link as LinkIcon, Network, Search } from 'lucide-react';
 import { loadCreedDocuments, loadVerseIndexData, buildTopicIndex, type VerseIndexData, type CreedDataSource } from './data/loadCreeds';
 import { SEED_DATA } from './data/seed';
-import { CreedDocument } from './types';
+import { CreedDocument, CreedDocumentType } from './types';
 import { THEMES, ThemeMode } from './theme';
 import { readTelemetryCounts, recordTelemetryEvent, type TelemetryCounts } from './lib/telemetry';
 import { VERSE_TEXT_SOURCE_LABEL } from './lib/verseText';
@@ -11,6 +11,7 @@ import { VerseTextTogglePanel } from './components/VerseTextTogglePanel';
 
 type LoadStatus = 'loading' | 'remote' | 'fallback';
 type CompareSide = 'left' | 'right';
+type HistoricalTypeFilter = 'all' | CreedDocumentType;
 
 function formatGeneratedAt(value: string | null) {
   if (!value) return 'UNKNOWN';
@@ -35,6 +36,11 @@ export default function App() {
   const [activeId, setActiveId] = useState<string>(() => readQueryParam('active', SEED_DATA[0]?.id ?? ''));
   const [referenceId, setReferenceId] = useState<string>(() => readQueryParam('reference', ''));
   const [referenceSide, setReferenceSide] = useState<CompareSide>(() => (readQueryParam('side', 'right') === 'left' ? 'left' : 'right'));
+  const [historicalTypeFilter, setHistoricalTypeFilter] = useState<HistoricalTypeFilter>(() => {
+    const value = readQueryParam('type', 'all').toLowerCase();
+    const allowed: HistoricalTypeFilter[] = ['all', 'ecumenical-creed', 'confession', 'catechism', 'declaration', 'article', 'canon', 'other'];
+    return (allowed as string[]).includes(value) ? (value as HistoricalTypeFilter) : 'all';
+  });
   const [deepSearchQuery, setDeepSearchQuery] = useState<string>(() => readQueryParam('deep', ''));
   const [searchQuery, setSearchQuery] = useState<string>(() => readQueryParam('search', ''));
   const [selectedVerse, setSelectedVerse] = useState<string>('');
@@ -113,9 +119,25 @@ export default function App() {
   );
 
   const topicIndex = useMemo(() => buildTopicIndex(documents), [documents]);
+  const availableHistoricalTypes = useMemo(() => {
+    const counts = documents.reduce<Record<string, number>>((acc, doc) => {
+      const key = doc.historical?.type ?? 'other';
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {});
+
+    const order: CreedDocumentType[] = ['ecumenical-creed', 'confession', 'catechism', 'declaration', 'article', 'canon', 'other'];
+    return order
+      .filter((type) => counts[type])
+      .map((type) => ({ type, count: counts[type] }));
+  }, [documents]);
 
   const getDoc = (id: string) => documents.find((doc) => doc.id === id);
   const toDocs = (ids: string[]) => ids.map((id) => getDoc(id)).filter((doc): doc is CreedDocument => Boolean(doc));
+  const matchesTypeFilter = (doc: CreedDocument) => {
+    if (historicalTypeFilter === 'all') return true;
+    return (doc.historical?.type ?? 'other') === historicalTypeFilter;
+  };
 
   const activeDoc = getDoc(activeId) ?? documents[0];
   const referenceDoc = referenceId ? getDoc(referenceId) : undefined;
@@ -206,6 +228,7 @@ export default function App() {
     }
 
     return documents
+      .filter(matchesTypeFilter)
       .map((doc) => {
         const title = doc.title.toLowerCase();
         const content = doc.content.toLowerCase();
@@ -230,7 +253,7 @@ export default function App() {
       .filter((entry) => entry.score > 0)
       .sort((a, b) => b.score - a.score || Number(a.doc.year) - Number(b.doc.year) || a.doc.title.localeCompare(b.doc.title))
       .map((entry) => entry.doc);
-  }, [documents, searchQuery]);
+  }, [documents, searchQuery, historicalTypeFilter]);
 
   const verseMatches = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -267,6 +290,7 @@ export default function App() {
     }
 
     const confessionMatches = documents
+      .filter(matchesTypeFilter)
       .map((doc) => {
         const title = doc.title.toLowerCase();
         const content = doc.content.toLowerCase();
@@ -315,7 +339,7 @@ export default function App() {
       directVerseMatches,
       supportedVerseCount: supportedVerses.size,
     };
-  }, [deepSearchQuery, documents, verseIndexData.verseIndex]);
+  }, [deepSearchQuery, documents, historicalTypeFilter, verseIndexData.verseIndex]);
 
   const lineage = useMemo(() => activeDoc ? computeLineage(activeDoc.id) : [], [activeDoc?.id]);
   const referenceLineage = useMemo(() => referenceDoc ? computeLineage(referenceDoc.id) : [], [referenceDoc?.id]);
@@ -372,12 +396,13 @@ export default function App() {
     if (activeId) params.set('active', activeId); else params.delete('active');
     if (referenceId) params.set('reference', referenceId); else params.delete('reference');
     params.set('side', referenceSide);
+    if (historicalTypeFilter !== 'all') params.set('type', historicalTypeFilter); else params.delete('type');
     if (deepSearchQuery.trim()) params.set('deep', deepSearchQuery.trim()); else params.delete('deep');
     if (searchQuery.trim()) params.set('search', searchQuery.trim()); else params.delete('search');
 
     const nextUrl = `${window.location.pathname}?${params.toString()}`;
     window.history.replaceState({}, '', nextUrl);
-  }, [activeId, referenceId, referenceSide, deepSearchQuery, searchQuery]);
+  }, [activeId, referenceId, referenceSide, historicalTypeFilter, deepSearchQuery, searchQuery]);
 
   const openReferencePanel = (docId: string) => {
     setReferenceId(docId);
@@ -480,6 +505,28 @@ export default function App() {
             onChange={(event) => setSearchQuery(event.target.value)}
             className="w-full bg-[#F9F7F2] border border-[#000000] p-2 text-[11px] font-mono focus:border-[#A52A2A] focus:outline-none transition-colors text-[#000000] placeholder-[#000000]"
           />
+          <div className="mt-3">
+            <div className="text-[9px] uppercase tracking-widest text-[#000000] mb-2 font-bold">Historical Type</div>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setHistoricalTypeFilter('all')}
+                className={`px-2 py-1 border text-[9px] font-mono uppercase tracking-widest ${historicalTypeFilter === 'all' ? 'border-[#A52A2A] text-[#A52A2A] bg-[#F9F7F2]' : 'border-[#000000] text-[#000000] hover:border-[#A52A2A]'}`}
+              >
+                All ({documents.length})
+              </button>
+              {availableHistoricalTypes.map((entry) => (
+                <button
+                  key={entry.type}
+                  type="button"
+                  onClick={() => setHistoricalTypeFilter(entry.type)}
+                  className={`px-2 py-1 border text-[9px] font-mono uppercase tracking-widest ${historicalTypeFilter === entry.type ? 'border-[#A52A2A] text-[#A52A2A] bg-[#F9F7F2]' : 'border-[#000000] text-[#000000] hover:border-[#A52A2A]'}`}
+                >
+                  {formatDocumentTypeLabel(entry.type)} ({entry.count})
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="p-4 border-b border-[#000000] bg-[#F9F7F2] shrink-0">
@@ -524,7 +571,7 @@ export default function App() {
                   {rootMatches.length === 0 && (
                     <div className="font-mono text-[10px] text-[#000000] py-4 text-center border border-dashed border-[#000000] px-3">
                       <div>NO_DOCUMENTS_FOUND</div>
-                      <div className="mt-1">Try next: search broader terms like grace, covenant, trinity.</div>
+                      <div className="mt-1">Try next: search broader terms like grace, covenant, trinity, or switch historical type.</div>
                     </div>
                   )}
                 </div>
@@ -1181,6 +1228,7 @@ export default function App() {
                   <div className="space-y-3">
                     {documents
                       .filter((doc) => doc.id !== activeDoc.id)
+                      .filter(matchesTypeFilter)
                       .slice(0, 6)
                       .map((doc) => (
                         <button key={doc.id} onClick={() => setActiveId(doc.id)} className="w-full text-left p-3 border border-dashed border-[#000000] hover:border-[#A52A2A] transition-colors bg-[#F9F7F2]">
@@ -1191,6 +1239,11 @@ export default function App() {
                           <div className="font-serif text-sm leading-snug line-clamp-2">{doc.title}</div>
                         </button>
                       ))}
+                    {documents.filter((doc) => doc.id !== activeDoc.id).filter(matchesTypeFilter).length === 0 && (
+                      <div className="font-mono text-[10px] text-[#000000] py-2 border-b border-dashed border-[#000000]">
+                        NO_NEARBY_DOCUMENTS_FOR_FILTER
+                      </div>
+                    )}
                   </div>
                 </div>
               </aside>
