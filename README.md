@@ -96,3 +96,33 @@ npm run data:prepare
 
 ### Data Verification
 The app now prefers the bundled `public/data.json` snapshot at startup, so it continues to work even if the GitHub source repo disappears. GitHub is used as a refresh source when available, but the runtime no longer depends on it.
+
+## Verse Source Configuration
+
+The proof-text expansion endpoint (`/api/verse`) now resolves verses from a GitHub-hosted KJV JSON source first, with external API fallback only when the reference cannot be resolved from the JSON dataset.
+
+### Configure GitHub JSON Source
+
+Set `VERSE_JSON_URL` in your environment (or Vercel project env vars) to point to a raw JSON Bible file.
+
+Default value:
+
+```text
+https://raw.githubusercontent.com/thiagobodruk/bible/master/json/en_kjv.json
+```
+
+Expected JSON shape (book-level):
+
+```json
+{
+  "name": "John",
+  "abbrev": "jn",
+  "chapters": [["verse 1", "verse 2"]]
+}
+```
+
+Notes:
+
+* If `VERSE_JSON_URL` is not provided, the default KJV GitHub source is used.
+* Successful verse responses are cacheable at the edge.
+* If a reference cannot be matched in the JSON source, `/api/verse` falls back to the external verse API.
