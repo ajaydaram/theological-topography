@@ -35,7 +35,7 @@ const DEFAULT_RETRIES = 2;
 const BASE_BACKOFF_MS = 250;
 const BIBLE_API_TRANSLATION_LABEL = 'KJV';
 
-export const VERSE_TEXT_SOURCE_LABEL = `${BIBLE_API_TRANSLATION_LABEL} via bible-api.com`;
+export const VERSE_TEXT_SOURCE_LABEL = `${BIBLE_API_TRANSLATION_LABEL} via GitHub JSON (API fallback)`;
 
 function normalizeVerseText(text: string) {
   return text
