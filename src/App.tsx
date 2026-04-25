@@ -363,6 +363,7 @@ export default function App() {
   const referenceLineage = useMemo(() => referenceDoc ? computeLineage(referenceDoc.id) : [], [referenceDoc?.id]);
   const ancestryBreadcrumb = useMemo(() => buildBreadcrumbTrail(lineage), [lineage]);
   const referenceBreadcrumb = useMemo(() => buildBreadcrumbTrail(referenceLineage), [referenceLineage]);
+  const rootDocument = useMemo(() => lineage[0] ?? activeDoc, [lineage, activeDoc]);
   const lineageParents = useMemo(() => lineage.slice(0, -1), [lineage]);
 
   const selectedVerseDocs = useMemo(() => {
@@ -543,6 +544,12 @@ export default function App() {
                   {formatDocumentTypeLabel(entry.type)} ({entry.count})
                 </button>
               ))}
+            </div>
+          </div>
+          <div className="mt-3 border border-dashed border-[#000000] p-2 text-[10px] text-[#000000] bg-[#F9F7F2]">
+            <div className="font-bold uppercase tracking-widest text-[9px] mb-1">What This App Does</div>
+            <div className="font-mono leading-snug">
+              Each document is connected by scripture roots and doctrinal links. Open a document, then follow the chain to see its root document and nearby connected documents.
             </div>
           </div>
         </div>
@@ -1028,6 +1035,19 @@ export default function App() {
                             <LinkIcon className="w-3 h-3" />
                             Chain of Custody
                           </div>
+                          {rootDocument && (
+                            <button
+                              onClick={() => setActiveId(rootDocument.id)}
+                              className="w-full text-left p-3 mb-2 border border-[#A52A2A] bg-[#F9F7F2] hover:bg-[#F9F7F2]/60 transition-colors"
+                            >
+                              <div className="text-[9px] uppercase tracking-widest text-[#A52A2A] font-bold mb-1">Root Document</div>
+                              <div className="flex items-center justify-between gap-3 text-[9px] font-mono text-[#000000] mb-1">
+                                <span>{rootDocument.year}</span>
+                                <span>ID {rootDocument.id.toUpperCase()}</span>
+                              </div>
+                              <div className="font-serif text-sm text-[#000000] leading-snug line-clamp-2">{rootDocument.title}</div>
+                            </button>
+                          )}
                           <div className="space-y-2">
                             {lineageParents.length > 0 ? lineageParents.map((node, index) => (
                               <button

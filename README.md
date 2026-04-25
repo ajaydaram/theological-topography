@@ -9,6 +9,19 @@ A high-performance React application designed to visually map the integration of
 *   **Root System (Normalized Proofs):** Displays the Scriptural underpinnings of each doctrinal paragraph, mapping them to a global inverted index to reveal shared theological DNA across different historical eras.
 *   **Cross-Reference Engine:** Connects disparate doctrinal statements together based on shared scripture and theological concepts, exposing hidden architectural alignments.
 
+## Explain It to Friends
+
+If someone asks "what is this app useful for?", use this:
+
+The app shows how Christian doctrinal documents are connected to each other.
+
+*   Start with one document.
+*   See its **Root Document** (the earliest source in its historical chain).
+*   Follow **Chain of Custody** links to trace historical development.
+*   Use **Cross-Reference Engine** and shared scripture roots to see which other documents teach related ideas.
+
+In short: it is a map of doctrinal relationships, not just a list of documents.
+
 ## Technical Architecture
 
 At its core, this project leverages a high-performance **Inverted Index Pattern** for real-time relational querying.
