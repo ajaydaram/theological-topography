@@ -42,17 +42,26 @@ function getResultReasons(title: string, content: string, topics: string[], proo
 
 function computeLinkEvidence(source: CreedDocument | undefined, target: CreedDocument | undefined) {
   if (!source || !target) {
-    return { sharedTopics: 0, sharedVerses: 0, score: 0 };
+    return { sharedTopics: 0, sharedVerses: 0, score: 0, sharedTopicNames: [] as string[], sharedVerseRefs: [] as string[] };
   }
 
   const sourceTopics = source.topics ?? [];
   const targetTopics = target.topics ?? [];
-  const sharedTopics = sourceTopics.filter((topic) => targetTopics.includes(topic)).length;
-  const sharedVerses = source.proofs.filter((proof) => target.proofs.some((candidate) => candidate.verseId === proof.verseId)).length;
+  const sharedTopicNames = sourceTopics.filter((topic) => targetTopics.includes(topic));
+  const sharedVersesSet = new Set(
+    source.proofs
+      .filter((proof) => target.proofs.some((candidate) => candidate.verseId === proof.verseId))
+      .map((proof) => proof.display),
+  );
+  const sharedVerseRefs = Array.from(sharedVersesSet);
+  const sharedTopics = sharedTopicNames.length;
+  const sharedVerses = sharedVerseRefs.length;
   return {
     sharedTopics,
     sharedVerses,
     score: sharedTopics * 4 + sharedVerses,
+    sharedTopicNames,
+    sharedVerseRefs,
   };
 }
 
@@ -75,6 +84,7 @@ export default function App() {
   const [hoveredVerse, setHoveredVerse] = useState<string>('');
   const [themeMode, setThemeMode] = useState<ThemeMode>('museum');
   const [hasSwitchedTheme, setHasSwitchedTheme] = useState<boolean>(false);
+  const [expandedLinkEvidenceId, setExpandedLinkEvidenceId] = useState<string | null>(null);
   const [loadStatus, setLoadStatus] = useState<LoadStatus>('loading');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dataSource, setDataSource] = useState<CreedDataSource | 'seed-fallback'>('seed-fallback');
@@ -201,6 +211,10 @@ export default function App() {
       setReferenceId('');
     }
   }, [referenceDoc, referenceId]);
+
+  useEffect(() => {
+    setExpandedLinkEvidenceId(null);
+  }, [activeDoc?.id]);
 
   const computeLineage = (docId: string) => {
     const trail: CreedDocument[] = [];
@@ -1212,20 +1226,56 @@ export default function App() {
                             Cross-Reference Engine
                           </div>
                           <div className="space-y-4">
-                            {relatedDocs.map((doc) => (
-                              <button
-                                key={doc.id}
-                                onClick={() => openReferencePanel(doc.id)}
-                                className="w-full text-left p-3 border border-dashed border-[#000000] hover:border-[#A52A2A] transition-colors bg-[#F9F7F2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#A52A2A]"
+                            {relatedEvidence.map((entry) => (
+                              <div
+                                key={entry.doc.id}
+                                className="w-full text-left p-3 border border-dashed border-[#000000] bg-[#F9F7F2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#A52A2A]"
                               >
-                                <div className="flex justify-between items-start mb-1">
-                                  <span className="font-mono text-[10px] text-[#000000] font-bold">{doc.id.toUpperCase()}</span>
-                                  <span className="text-[9px] font-bold text-[#000000]">{doc.year} AD</span>
+                                <button
+                                  type="button"
+                                  onClick={() => openReferencePanel(entry.doc.id)}
+                                  className="w-full text-left hover:text-[#A52A2A] transition-colors"
+                                >
+                                  <div className="flex justify-between items-start mb-1">
+                                    <span className="font-mono text-[10px] text-[#000000] font-bold">{entry.doc.id.toUpperCase()}</span>
+                                    <span className="text-[9px] font-bold text-[#000000]">{entry.doc.year} AD</span>
+                                  </div>
+                                  <p className="text-xs font-serif leading-snug italic text-[#000000] line-clamp-3">{entry.doc.content}</p>
+                                </button>
+                                <div className="mt-2 border-t border-dashed border-[#000000] pt-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedLinkEvidenceId((current) => (current === entry.doc.id ? null : entry.doc.id))}
+                                    className="text-[9px] uppercase tracking-widest font-mono text-[#000000] underline decoration-[#000000] underline-offset-4 hover:decoration-[#A52A2A]"
+                                  >
+                                    {expandedLinkEvidenceId === entry.doc.id ? 'Hide link evidence' : 'Explain this link'}
+                                  </button>
+                                  {expandedLinkEvidenceId === entry.doc.id && (
+                                    <div className="mt-2 p-2 border border-[#000000] bg-[#F9F7F2]">
+                                      <div className="text-[9px] uppercase tracking-widest font-mono text-[#A52A2A] mb-1">Link Evidence</div>
+                                      <div className="text-[9px] uppercase tracking-widest font-mono text-[#000000] space-y-1">
+                                        <div>Score {entry.evidence.score}</div>
+                                        <div>Shared Topics {entry.evidence.sharedTopics}</div>
+                                        <div>Shared Verses {entry.evidence.sharedVerses}</div>
+                                      </div>
+                                      <div className="mt-2 flex flex-wrap gap-1">
+                                        {entry.evidence.sharedTopicNames.slice(0, 3).map((topic) => (
+                                          <span key={`${entry.doc.id}-topic-${topic}`} className="text-[8px] uppercase tracking-widest px-1.5 py-0.5 border border-dashed border-[#000000] text-[#000000]">
+                                            topic {topic}
+                                          </span>
+                                        ))}
+                                        {entry.evidence.sharedVerseRefs.slice(0, 3).map((verse) => (
+                                          <span key={`${entry.doc.id}-verse-${verse}`} className="text-[8px] uppercase tracking-widest px-1.5 py-0.5 border border-dashed border-[#000000] text-[#000000]">
+                                            verse {verse}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
-                                <p className="text-xs font-serif leading-snug italic text-[#000000] line-clamp-3">{doc.content}</p>
-                              </button>
+                              </div>
                             ))}
-                            {relatedDocs.length === 0 && (
+                            {relatedEvidence.length === 0 && (
                               <div className="font-mono text-[10px] text-[#000000] py-2 border-b border-dashed border-[#000000]">
                                 <div>NO_CONNECTIONS_FOUND</div>
                                 <div className="mt-1">Try next: open Topic Neighbors or pick a verse root to discover linked documents.</div>
