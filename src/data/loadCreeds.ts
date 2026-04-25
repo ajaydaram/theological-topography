@@ -1,4 +1,4 @@
-import { CreedDocument, CreedProof, VerseIndexEntry } from '../types';
+import { CreedDocument, CreedDocumentType, CreedProof, HistoricalDate, VerseIndexEntry } from '../types';
 import { formatVerseReference } from '../lib/normalizer';
 
 const NORMALIZED_URL = '/normalized-creeds.json';
@@ -71,6 +71,61 @@ type TreeEntry = {
   type: string;
 };
 
+const DATE_OVERRIDES: Array<{
+  match: RegExp;
+  date: HistoricalDate;
+}> = [
+  {
+    match: /apostles\s+creed/i,
+    date: {
+      label: 'A.D. 650 (received text)',
+      startYear: 650,
+      precision: 'circa',
+      confidence: 'medium',
+    },
+  },
+  {
+    match: /athanasian\s+creed/i,
+    date: {
+      label: '5th-6th century',
+      startYear: 500,
+      endYear: 600,
+      precision: 'century-range',
+      confidence: 'medium',
+    },
+  },
+  {
+    match: /thirty\s*[- ]?nine\s+articles/i,
+    date: {
+      label: 'A.D. 1563/1571',
+      startYear: 1563,
+      endYear: 1571,
+      precision: 'year-range',
+      confidence: 'high',
+    },
+  },
+  {
+    match: /canons\s+of\s+dort/i,
+    date: {
+      label: 'A.D. 1618-1619',
+      startYear: 1618,
+      endYear: 1619,
+      precision: 'year-range',
+      confidence: 'high',
+    },
+  },
+  {
+    match: /chicago\s*[- ]?lambeth\s+quadrilateral/i,
+    date: {
+      label: 'A.D. 1886/1888',
+      startYear: 1886,
+      endYear: 1888,
+      precision: 'year-range',
+      confidence: 'high',
+    },
+  },
+];
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -80,6 +135,45 @@ function slugify(value: string) {
 
 function uniqueStrings(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
+}
+
+function inferDocumentType(title: string): CreedDocumentType {
+  const normalized = title.toLowerCase();
+
+  if (/\b(apostles|nicene|chalcedonian|athanasian)\b/.test(normalized) && normalized.includes('creed')) {
+    return 'ecumenical-creed';
+  }
+
+  if (normalized.includes('catechism')) return 'catechism';
+  if (normalized.includes('confession')) return 'confession';
+  if (normalized.includes('declaration') || normalized.includes('statement') || normalized.includes('articles')) return 'declaration';
+  if (normalized.includes('canon') || normalized.includes('canons')) return 'canon';
+  if (normalized.includes('creed')) return 'confession';
+
+  return 'other';
+}
+
+function inferHistoricalDate(title: string, year: number): HistoricalDate {
+  for (const override of DATE_OVERRIDES) {
+    if (override.match.test(title)) {
+      return override.date;
+    }
+  }
+
+  if (Number.isFinite(year) && year > 0) {
+    return {
+      label: `A.D. ${year}`,
+      startYear: year,
+      precision: 'year',
+      confidence: 'high',
+    };
+  }
+
+  return {
+    label: 'UNKNOWN',
+    precision: 'unknown',
+    confidence: 'low',
+  };
 }
 
 async function fetchJson<T>(url: string): Promise<T | null> {
@@ -120,12 +214,18 @@ function createDocument(params: {
   proofs: CreedProof[];
   sourcePath: string;
 }): CreedDocument {
+  const historicalType = inferDocumentType(params.title);
+
   return {
     ...params,
     connections: [],
     history_link: null,
     topics: inferTopics(params.title, params.content),
     sourcePath: params.sourcePath,
+    historical: {
+      type: historicalType,
+      date: inferHistoricalDate(params.title, params.year),
+    },
   };
 }
 
@@ -136,6 +236,10 @@ function normalizeSnapshotDocuments(payload: SnapshotPayload): CreedDocument[] {
     ...document,
     topics: document.topics ?? inferTopics(document.title, document.content),
     sourcePath: document.sourcePath ?? 'public/data.json',
+    historical: document.historical ?? {
+      type: inferDocumentType(document.title),
+      date: inferHistoricalDate(document.title, Number(document.year)),
+    },
   }));
 }
 

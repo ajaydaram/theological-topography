@@ -25,6 +25,11 @@ function readQueryParam(name: string, fallback = '') {
   return value && value.trim() ? value : fallback;
 }
 
+function formatDocumentTypeLabel(value: string | undefined) {
+  if (!value) return 'document';
+  return value.replace(/-/g, ' ');
+}
+
 export default function App() {
   const [data, setData] = useState<CreedDocument[]>(SEED_DATA);
   const [activeId, setActiveId] = useState<string>(() => readQueryParam('active', SEED_DATA[0]?.id ?? ''));
@@ -825,6 +830,24 @@ export default function App() {
                     <span>{activeDoc.proofs.length}</span>
                     <span className="mx-1">•</span>
                     <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {activeDoc.year}</span>
+                    {activeDoc.historical?.date?.label && (
+                      <>
+                        <span className="mx-1">•</span>
+                        <span>{activeDoc.historical.date.label}</span>
+                      </>
+                    )}
+                    {activeDoc.historical?.type && (
+                      <>
+                        <span className="mx-1">•</span>
+                        <span>{formatDocumentTypeLabel(activeDoc.historical.type)}</span>
+                      </>
+                    )}
+                    {activeDoc.historical?.date?.confidence && (
+                      <>
+                        <span className="mx-1">•</span>
+                        <span>{activeDoc.historical.date.confidence} confidence</span>
+                      </>
+                    )}
                     <span className="mx-1">•</span>
                     <span className="truncate">{activeDoc.sourcePath ?? 'local-seed'}</span>
                   </div>
@@ -1043,6 +1066,24 @@ export default function App() {
                       <span>{referenceDoc.proofs.length}</span>
                       <span className="mx-1">•</span>
                       <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {referenceDoc.year}</span>
+                      {referenceDoc.historical?.date?.label && (
+                        <>
+                          <span className="mx-1">•</span>
+                          <span>{referenceDoc.historical.date.label}</span>
+                        </>
+                      )}
+                      {referenceDoc.historical?.type && (
+                        <>
+                          <span className="mx-1">•</span>
+                          <span>{formatDocumentTypeLabel(referenceDoc.historical.type)}</span>
+                        </>
+                      )}
+                      {referenceDoc.historical?.date?.confidence && (
+                        <>
+                          <span className="mx-1">•</span>
+                          <span>{referenceDoc.historical.date.confidence} confidence</span>
+                        </>
+                      )}
                       <span className="mx-1">•</span>
                       <span className="truncate">{referenceDoc.sourcePath ?? 'local-seed'}</span>
                     </div>
