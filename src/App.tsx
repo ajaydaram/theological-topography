@@ -138,6 +138,24 @@ export default function App() {
     if (historicalTypeFilter === 'all') return true;
     return (doc.historical?.type ?? 'other') === historicalTypeFilter;
   };
+  const groupedNearbyDocs = useMemo(() => {
+    const order: CreedDocumentType[] = ['ecumenical-creed', 'confession', 'catechism', 'declaration', 'article', 'canon', 'other'];
+    const nearbyDocs = documents
+      .filter((doc) => doc.id !== activeId)
+      .filter(matchesTypeFilter)
+      .slice(0, 12);
+
+    const groups = nearbyDocs.reduce<Record<string, CreedDocument[]>>((acc, doc) => {
+      const key = doc.historical?.type ?? 'other';
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(doc);
+      return acc;
+    }, {});
+
+    return order
+      .filter((type) => groups[type]?.length)
+      .map((type) => ({ type, docs: groups[type] }));
+  }, [documents, activeId, historicalTypeFilter]);
 
   const activeDoc = getDoc(activeId) ?? documents[0];
   const referenceDoc = referenceId ? getDoc(referenceId) : undefined;
@@ -1226,20 +1244,23 @@ export default function App() {
                     Nearby Documents
                   </h3>
                   <div className="space-y-3">
-                    {documents
-                      .filter((doc) => doc.id !== activeDoc.id)
-                      .filter(matchesTypeFilter)
-                      .slice(0, 6)
-                      .map((doc) => (
-                        <button key={doc.id} onClick={() => setActiveId(doc.id)} className="w-full text-left p-3 border border-dashed border-[#000000] hover:border-[#A52A2A] transition-colors bg-[#F9F7F2]">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="font-mono text-[9px] text-[#000000]">{doc.year}</span>
-                            <span className="text-[9px] text-[#000000]">{doc.proofs.length} ROOTS</span>
-                          </div>
-                          <div className="font-serif text-sm leading-snug line-clamp-2">{doc.title}</div>
-                        </button>
-                      ))}
-                    {documents.filter((doc) => doc.id !== activeDoc.id).filter(matchesTypeFilter).length === 0 && (
+                    {groupedNearbyDocs.map((group) => (
+                      <div key={group.type} className="space-y-2">
+                        <div className="text-[9px] uppercase tracking-widest text-[#A52A2A] font-bold border-b border-dashed border-[#000000] pb-1">
+                          {formatDocumentTypeLabel(group.type)}
+                        </div>
+                        {group.docs.map((doc) => (
+                          <button key={doc.id} onClick={() => setActiveId(doc.id)} className="w-full text-left p-3 border border-dashed border-[#000000] hover:border-[#A52A2A] transition-colors bg-[#F9F7F2]">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-mono text-[9px] text-[#000000]">{doc.year}</span>
+                              <span className="text-[9px] text-[#000000]">{doc.proofs.length} ROOTS</span>
+                            </div>
+                            <div className="font-serif text-sm leading-snug line-clamp-2">{doc.title}</div>
+                          </button>
+                        ))}
+                      </div>
+                    ))}
+                    {groupedNearbyDocs.length === 0 && (
                       <div className="font-mono text-[10px] text-[#000000] py-2 border-b border-dashed border-[#000000]">
                         NO_NEARBY_DOCUMENTS_FOR_FILTER
                       </div>
