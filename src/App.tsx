@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, ChevronRight, Clock, FileText, Hash, Link as LinkIcon, Network, Search } from 'lucide-react';
+import { BookOpen, ChevronRight, Clock, Copy, FileText, Hash, Link as LinkIcon, Network, Route, Search, Sparkles } from 'lucide-react';
 import { loadCreedDocuments, loadVerseIndexData, buildTopicIndex, type VerseIndexData, type CreedDataSource } from './data/loadCreeds';
 import { SEED_DATA } from './data/seed';
 import { CreedDocument, CreedDocumentType } from './types';
@@ -31,11 +31,39 @@ function formatDocumentTypeLabel(value: string | undefined) {
   return value.replace(/-/g, ' ');
 }
 
+function getResultReasons(title: string, content: string, topics: string[], proofs: string, query: string) {
+  const reasons: string[] = [];
+  if (title.includes(query)) reasons.push('title');
+  if (topics.join(' ').includes(query)) reasons.push('topic');
+  if (proofs.includes(query)) reasons.push('verse');
+  if (content.includes(query)) reasons.push('content');
+  return reasons;
+}
+
+function computeLinkEvidence(source: CreedDocument | undefined, target: CreedDocument | undefined) {
+  if (!source || !target) {
+    return { sharedTopics: 0, sharedVerses: 0, score: 0 };
+  }
+
+  const sourceTopics = source.topics ?? [];
+  const targetTopics = target.topics ?? [];
+  const sharedTopics = sourceTopics.filter((topic) => targetTopics.includes(topic)).length;
+  const sharedVerses = source.proofs.filter((proof) => target.proofs.some((candidate) => candidate.verseId === proof.verseId)).length;
+  return {
+    sharedTopics,
+    sharedVerses,
+    score: sharedTopics * 4 + sharedVerses,
+  };
+}
+
 export default function App() {
   const [data, setData] = useState<CreedDocument[]>(SEED_DATA);
   const [activeId, setActiveId] = useState<string>(() => readQueryParam('active', SEED_DATA[0]?.id ?? ''));
   const [referenceId, setReferenceId] = useState<string>(() => readQueryParam('reference', ''));
   const [referenceSide, setReferenceSide] = useState<CompareSide>(() => (readQueryParam('side', 'right') === 'left' ? 'left' : 'right'));
+  const [storyModeEnabled, setStoryModeEnabled] = useState<boolean>(false);
+  const [mobileCompareFocus, setMobileCompareFocus] = useState<'active' | 'reference'>('active');
+  const [copyLinkLabel, setCopyLinkLabel] = useState<'COPY_STUDY_LINK' | 'COPIED'>('COPY_STUDY_LINK');
   const [historicalTypeFilter, setHistoricalTypeFilter] = useState<HistoricalTypeFilter>(() => {
     const value = readQueryParam('type', 'all').toLowerCase();
     const allowed: HistoricalTypeFilter[] = ['all', 'ecumenical-creed', 'confession', 'catechism', 'declaration', 'article', 'canon', 'other'];
@@ -235,7 +263,7 @@ export default function App() {
 
   const rootMatches = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return [];
+    if (!query) return [] as Array<{ doc: CreedDocument; score: number; reasons: string[] }>;
 
     // Find matching topics for this query
     const matchingTopics = new Set<string>();
@@ -252,7 +280,7 @@ export default function App() {
         const content = doc.content.toLowerCase();
         const topics = (doc.topics ?? []).join(' ').toLowerCase();
         const proofs = doc.proofs.map((proof) => proof.display).join(' ').toLowerCase();
-        const haystack = `${title} ${content} ${topics} ${proofs}`;
+        const reasons = getResultReasons(title, content, doc.topics ?? [], proofs, query);
 
         // Score based on where the query appears
         let score = 0;
@@ -266,11 +294,11 @@ export default function App() {
           if ((doc.topics ?? []).includes(topic)) score += 15;
         }
 
-        return { doc, score };
+        return { doc, score, reasons };
       })
       .filter((entry) => entry.score > 0)
       .sort((a, b) => b.score - a.score || Number(a.doc.year) - Number(b.doc.year) || a.doc.title.localeCompare(b.doc.title))
-      .map((entry) => entry.doc);
+      .slice(0, 20);
   }, [documents, searchQuery, historicalTypeFilter]);
 
   const verseMatches = useMemo(() => {
@@ -388,6 +416,29 @@ export default function App() {
       docs: toDocs(topicIndex[topic] ?? []).filter((doc) => doc.id !== activeDoc.id).slice(0, 4),
     }));
   }, [activeDoc?.id, activeDoc?.topics, topicIndex]);
+  const relatedEvidence = useMemo(
+    () => relatedDocs.map((doc) => ({ doc, evidence: computeLinkEvidence(activeDoc, doc) })),
+    [activeDoc, relatedDocs],
+  );
+  const referenceEvidence = useMemo(() => computeLinkEvidence(activeDoc, referenceDoc), [activeDoc, referenceDoc]);
+  const topConnectedDocs = useMemo(
+    () => [...documents].sort((a, b) => b.connections.length - a.connections.length || Number(a.year) - Number(b.year)).slice(0, 5),
+    [documents],
+  );
+  const connectionHealth = useMemo(() => {
+    const total = documents.length || 1;
+    const withLineage = documents.filter((doc) => Boolean(doc.history_link)).length;
+    const withConnections = documents.filter((doc) => (doc.connections?.length ?? 0) > 0).length;
+    const withProofs = documents.filter((doc) => (doc.proofs?.length ?? 0) > 0).length;
+    return {
+      withLineage,
+      withConnections,
+      withProofs,
+      lineagePct: Math.round((withLineage / total) * 100),
+      connectionsPct: Math.round((withConnections / total) * 100),
+      proofsPct: Math.round((withProofs / total) * 100),
+    };
+  }, [documents]);
   const hasReferencePanel = Boolean(referenceDoc);
   const hasDoctrineSearch = Boolean(searchQuery.trim() || deepSearchQuery.trim());
   const hasPrimaryDocument = Boolean(activeDoc);
@@ -406,6 +457,17 @@ export default function App() {
   const logTelemetry = (name: Parameters<typeof recordTelemetryEvent>[0]) => {
     recordTelemetryEvent(name);
     setTelemetryCounts(readTelemetryCounts());
+  };
+
+  const copyStudyLink = async () => {
+    if (typeof window === 'undefined') return;
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopyLinkLabel('COPIED');
+      window.setTimeout(() => setCopyLinkLabel('COPY_STUDY_LINK'), 1500);
+    } catch {
+      setCopyLinkLabel('COPY_STUDY_LINK');
+    }
   };
 
   useEffect(() => {
@@ -559,6 +621,16 @@ export default function App() {
             <h2 className="text-[10px] uppercase tracking-widest text-[#A52A2A] font-bold">Pinned Study Workflow</h2>
             <span className="font-mono text-[10px] text-[#000000]">{completedWorkflowSteps}/5</span>
           </div>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setStoryModeEnabled((current) => !current)}
+              className={`text-[9px] uppercase tracking-widest font-bold px-2 py-1 border ${storyModeEnabled ? 'border-[#A52A2A] text-[#A52A2A]' : 'border-[#000000] text-[#000000]'}`}
+            >
+              {storyModeEnabled ? 'Story Mode On' : 'Story Mode Off'}
+            </button>
+            <Sparkles className="w-3 h-3 text-[#A52A2A]" />
+          </div>
           <ol className="space-y-2">
             {workflowSteps.map((step, index) => (
               <li key={step.id} className="flex items-center justify-between gap-3 text-[10px] font-mono text-[#000000] border border-dashed border-[#000000] px-2 py-2">
@@ -570,6 +642,15 @@ export default function App() {
               </li>
             ))}
           </ol>
+          {storyModeEnabled && (
+            <div className="mt-3 text-[10px] font-mono text-[#000000] border border-dashed border-[#000000] p-2 bg-[#F9F7F2]">
+              <div className="uppercase tracking-widest text-[9px] text-[#A52A2A] mb-1">Suggested Next Step</div>
+              {!searchQuery.trim() && <div>Type a doctrine term in search to begin.</div>}
+              {searchQuery.trim() && !referenceDoc && <div>Open a connected document from Cross-Reference Engine.</div>}
+              {referenceDoc && !selectedVerse && <div>Select a scripture root to inspect shared foundations.</div>}
+              {selectedVerse && <div>Use Compare SWAP or PIN buttons to continue your study flow.</div>}
+            </div>
+          )}
         </div>
 
         <div className="flex-1 p-4 space-y-4 overflow-hidden">
@@ -578,19 +659,27 @@ export default function App() {
               <section>
                 <h2 className="text-[10px] uppercase tracking-widest text-[#A52A2A] font-bold mb-4 px-2">Document Matches</h2>
                 <div className="space-y-2">
-                  {rootMatches.map((doc) => (
+                  {rootMatches.map((entry) => (
                     <button
-                      key={doc.id}
-                      onClick={() => setActiveId(doc.id)}
-                      className={`w-full text-left p-3 border border-[#000000] transition-all group ${activeDoc?.id === doc.id ? 'bg-[#F9F7F2]' : 'hover:bg-[#F9F7F2]/50'}`}
+                      key={entry.doc.id}
+                      onClick={() => setActiveId(entry.doc.id)}
+                      className={`w-full text-left p-3 border border-[#000000] transition-all group ${activeDoc?.id === entry.doc.id ? 'bg-[#F9F7F2]' : 'hover:bg-[#F9F7F2]/50'}`}
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <span className={`font-mono text-[10px] font-bold ${activeDoc?.id === doc.id ? 'text-[#A52A2A]' : 'text-[#000000]'}`}>{doc.year}</span>
-                        <span className="text-[9px] text-[#000000]">{doc.proofs.length} ROOTS</span>
+                        <span className={`font-mono text-[10px] font-bold ${activeDoc?.id === entry.doc.id ? 'text-[#A52A2A]' : 'text-[#000000]'}`}>{entry.doc.year}</span>
+                        <span className="text-[9px] text-[#000000]">{entry.doc.proofs.length} ROOTS</span>
                       </div>
-                      <h3 className={`font-serif text-sm leading-snug ${activeDoc?.id === doc.id ? 'text-[#000000] underline decoration-[#A52A2A] decoration-2 underline-offset-4' : 'text-[#000000] group-hover:underline underline-offset-4'}`}>
-                        {doc.title}
+                      <h3 className={`font-serif text-sm leading-snug ${activeDoc?.id === entry.doc.id ? 'text-[#000000] underline decoration-[#A52A2A] decoration-2 underline-offset-4' : 'text-[#000000] group-hover:underline underline-offset-4'}`}>
+                        {entry.doc.title}
                       </h3>
+                      <div className="mt-2 flex flex-wrap items-center gap-1">
+                        <span className="text-[9px] font-mono uppercase tracking-widest text-[#A52A2A]">score {entry.score}</span>
+                        {entry.reasons.map((reason) => (
+                          <span key={`${entry.doc.id}-${reason}`} className="text-[8px] uppercase tracking-widest px-1.5 py-0.5 border border-dashed border-[#000000] text-[#000000]">
+                            {reason}
+                          </span>
+                        ))}
+                      </div>
                     </button>
                   ))}
                   {rootMatches.length === 0 && (
@@ -715,6 +804,14 @@ export default function App() {
               <div>Swaps {telemetryCounts.panel_swapped}</div>
               </div>
             </div>
+            <div className="mt-3 pt-3 border-t border-[#000000] font-mono text-[10px] uppercase tracking-widest text-[#000000]">
+              <div className="mb-2 opacity-70">Connection Health</div>
+              <div className="space-y-1">
+                <div>Lineage Links {connectionHealth.lineagePct}%</div>
+                <div>Cross Links {connectionHealth.connectionsPct}%</div>
+                <div>Proof Coverage {connectionHealth.proofsPct}%</div>
+              </div>
+            </div>
           </div>
         </div>
       </aside>
@@ -772,6 +869,49 @@ export default function App() {
             >
               CLOSE
             </button>
+            <button
+              type="button"
+              aria-label="Copy study link"
+              onClick={copyStudyLink}
+              className="flex items-center gap-1"
+            >
+              <Copy className="w-3 h-3" /> {copyLinkLabel}
+            </button>
+            {referenceDoc && (
+              <>
+                <span className="opacity-50">MOBILE_VIEW</span>
+                <button
+                  type="button"
+                  onClick={() => setMobileCompareFocus('active')}
+                  className={mobileCompareFocus === 'active' ? 'text-[#A52A2A]' : ''}
+                >
+                  PRIMARY
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMobileCompareFocus('reference')}
+                  className={mobileCompareFocus === 'reference' ? 'text-[#A52A2A]' : ''}
+                >
+                  REFERENCE
+                </button>
+              </>
+            )}
+          </div>
+
+          <div className="w-full border border-dashed border-[#000000] p-3 bg-[#F9F7F2]">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-[#A52A2A] mb-2">Top Connected Doctrines</div>
+            <div className="flex flex-wrap gap-2">
+              {topConnectedDocs.map((doc) => (
+                <button
+                  key={doc.id}
+                  type="button"
+                  onClick={() => setActiveId(doc.id)}
+                  className="px-2 py-1 border border-[#000000] text-[9px] uppercase tracking-widest font-mono hover:border-[#A52A2A]"
+                >
+                  {doc.title} ({doc.connections.length})
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="w-full grid grid-cols-1 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] gap-4 items-start">
@@ -869,7 +1009,7 @@ export default function App() {
         <div className="flex-1 p-6 md:p-10 relative w-full bg-[#F9F7F2]">
           {activeDoc ? (
             <div className={`grid grid-cols-1 ${hasReferencePanel ? 'xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)_minmax(320px,0.6fr)]' : 'xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]'} gap-8 max-w-[1900px] mx-auto h-full items-start`}>
-              <section className={`${theme.layout.docContainer} h-full p-6 md:p-10 relative overflow-hidden ${referenceSide === 'left' ? 'xl:order-2' : 'xl:order-1'}`}>
+              <section className={`${theme.layout.docContainer} h-full p-6 md:p-10 relative overflow-hidden ${referenceSide === 'left' ? 'xl:order-2' : 'xl:order-1'} ${hasReferencePanel && mobileCompareFocus === 'reference' ? 'hidden xl:block' : 'block'}`}>
                 <div className={`text-[120px] md:text-[220px] ${theme.typography.watermark} absolute right-3 top-6 pointer-events-none select-none max-w-full md:block z-0`}>
                   {activeDoc.year}
                 </div>
@@ -1125,7 +1265,7 @@ export default function App() {
               </section>
 
               {referenceDoc && (
-                <section className={`${theme.layout.docContainer} h-full p-6 md:p-10 relative overflow-hidden border-[#000000] ${referenceSide === 'left' ? 'xl:order-1' : 'xl:order-2'}`}>
+                <section className={`${theme.layout.docContainer} h-full p-6 md:p-10 relative overflow-hidden border-[#000000] ${referenceSide === 'left' ? 'xl:order-1' : 'xl:order-2'} ${mobileCompareFocus === 'active' ? 'hidden xl:block' : 'block'}`}>
                   <div className="flex items-start justify-between gap-4 mb-6">
                     <div>
                       <div className="text-[9px] uppercase tracking-[0.2em] font-bold text-[#A52A2A] mb-2">Reference Panel</div>
@@ -1240,6 +1380,20 @@ export default function App() {
                     <LinkIcon className="w-3 h-3" />
                     Family Tree
                   </h3>
+                  <div className="mb-4 border border-dashed border-[#000000] p-3 bg-[#F9F7F2]">
+                    <div className="text-[9px] uppercase tracking-widest font-bold text-[#A52A2A] mb-2 flex items-center gap-1">
+                      <Route className="w-3 h-3" /> Mini Lineage Map
+                    </div>
+                    <div className="space-y-1">
+                      {lineage.map((node, index) => (
+                        <div key={`mini-${node.id}`} className="flex items-center gap-2 text-[9px] font-mono text-[#000000]">
+                          <span className="w-12 shrink-0">{node.year}</span>
+                          <span className={`h-2 w-2 rounded-full ${index === lineage.length - 1 ? 'bg-[#A52A2A]' : 'bg-[#000000]'}`}></span>
+                          <span className="truncate">{node.title}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                   <div className="space-y-3">
                     {lineage.map((node, index) => (
                       <button
@@ -1283,6 +1437,44 @@ export default function App() {
                     {groupedNearbyDocs.length === 0 && (
                       <div className="font-mono text-[10px] text-[#000000] py-2 border-b border-dashed border-[#000000]">
                         NO_NEARBY_DOCUMENTS_FOR_FILTER
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-[10px] uppercase tracking-[0.2em] font-bold text-[#A52A2A] mb-4 flex items-center gap-2">
+                    <Network className="w-3 h-3" />
+                    Why These Are Linked
+                  </h3>
+                  <div className="space-y-3">
+                    {referenceDoc && (
+                      <div className="p-3 border border-[#000000] bg-[#F9F7F2]">
+                        <div className="font-mono text-[9px] uppercase tracking-widest text-[#A52A2A] mb-2">Current Compare Pair</div>
+                        <div className="font-serif text-sm text-[#000000] mb-2">{activeDoc.title} ↔ {referenceDoc.title}</div>
+                        <div className="font-mono text-[9px] uppercase tracking-widest text-[#000000] space-y-1">
+                          <div>Link Score {referenceEvidence.score}</div>
+                          <div>Shared Topics {referenceEvidence.sharedTopics}</div>
+                          <div>Shared Verses {referenceEvidence.sharedVerses}</div>
+                        </div>
+                      </div>
+                    )}
+                    {relatedEvidence.slice(0, 4).map((entry) => (
+                      <button
+                        key={`evidence-${entry.doc.id}`}
+                        type="button"
+                        onClick={() => openReferencePanel(entry.doc.id)}
+                        className="w-full text-left p-3 border border-dashed border-[#000000] hover:border-[#A52A2A] bg-[#F9F7F2]"
+                      >
+                        <div className="font-serif text-sm leading-snug text-[#000000] mb-1">{entry.doc.title}</div>
+                        <div className="font-mono text-[9px] uppercase tracking-widest text-[#000000]">
+                          score {entry.evidence.score} · topics {entry.evidence.sharedTopics} · verses {entry.evidence.sharedVerses}
+                        </div>
+                      </button>
+                    ))}
+                    {relatedEvidence.length === 0 && (
+                      <div className="font-mono text-[10px] text-[#000000] py-2 border-b border-dashed border-[#000000]">
+                        NO_LINK_EVIDENCE_AVAILABLE
                       </div>
                     )}
                   </div>

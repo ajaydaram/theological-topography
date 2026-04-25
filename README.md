@@ -77,6 +77,26 @@ npm run dev
 ```
 Navigate to `http://localhost:3000` to interact with the application.
 
+### 5. Smoke Tests
+
+Run the scripture toggle smoke test:
+
+```bash
+npm run test:verse
+```
+
+Run the core app journey smoke test:
+
+```bash
+npm run test:journey
+```
+
+Optional target override:
+
+```bash
+TARGET_URL=https://theological-topography.vercel.app npm run test:journey
+```
+
 ## How to Start (Data Pipeline)
 
 ### 1. Clone/Pull the Source JSON Files
